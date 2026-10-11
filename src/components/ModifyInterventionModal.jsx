@@ -2,14 +2,15 @@ import React, { useState } from 'react';
 import { Settings2, X, Check } from 'lucide-react';
 
 export default function ModifyInterventionModal({ isOpen, onClose, onSave, intervention, activeSite }) {
-  if (!isOpen) return null;
-
+  // Hooks must run on every render, so the early return comes after them.
   const [shiftStart, setShiftStart] = useState('06:30');
   const [shiftEnd, setShiftEnd] = useState('11:00');
   const [restDurationMins, setRestDurationMins] = useState(30);
   const [waterPerWorkerLiters, setWaterPerWorkerLiters] = useState(3.5);
   const [activeMistingFans, setActiveMistingFans] = useState(4);
   const [supervisorNote, setSupervisorNote] = useState('Shift advanced by 2 hours. Misting canopies active at Tower 4.');
+
+  if (!isOpen) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();

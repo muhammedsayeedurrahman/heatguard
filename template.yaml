@@ -1,0 +1,473 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  HeatGuard - closed-loop occupational heat-risk intervention system.
+  Amazon Bedrock (Claude) plans interventions from Liljegren WBGT / NIOSH physics; DynamoDB keeps a
+  hash-chained audit ledger; EventBridge routes safety events; SNS reaches workers and supervisors;
+  CloudFront serves the PWA and proxies /api/* to API Gateway.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedPattern: '^[a-z0-9-]{1,16}$'
+    Description: Deployment stage, used in resource names.
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-sonnet-5-5
+    Description: Primary Claude model on Amazon Bedrock (Messages API endpoint).
+  BedrockFallbackModelId:
+    Type: String
+    Default: anthropic.claude-sonnet-5
+    Description: Used automatically if the primary model is not enabled for this account (403/404).
+  BedrockRegion:
+    Type: String
+    Default: ''
+    Description: Region for Bedrock calls. Empty = the stack's region.
+  BedrockEffort:
+    Type: String
+    Default: low
+    AllowedValues: [low, medium, high, none]
+    Description: Claude effort level for plan synthesis ("none" omits the parameter).
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Optional email subscribed to both SNS topics (confirm the subscription email).
+  HeatMonitorSchedule:
+    Type: String
+    Default: rate(30 minutes)
+    Description: EventBridge Scheduler expression for the live-weather WBGT sweep.
+  EnableHeatMonitor:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  DeployFrontend:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Create the S3 bucket + CloudFront distribution that host the web app.
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+  HasBedrockRegion: !Not [!Equals [!Ref BedrockRegion, '']]
+  HeatMonitorEnabled: !Equals [!Ref EnableHeatMonitor, 'true']
+  FrontendEnabled: !Equals [!Ref DeployFrontend, 'true']
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    CodeUri: backend/
+    MemorySize: 512
+    Timeout: 15
+    Tracing: Active
+    LoggingConfig:
+      LogFormat: JSON
+    Environment:
+      Variables:
+        HEATGUARD_TABLE_NAME: !Ref HeatGuardTable
+        HEATGUARD_EVENT_BUS_NAME: !Ref SafetyEventBus
+        HEATGUARD_BROADCAST_TOPIC_ARN: !Ref WorkerBroadcastTopic
+        HEATGUARD_ALERTS_TOPIC_ARN: !Ref SafetyAlertsTopic
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        BEDROCK_FALLBACK_MODEL_ID: !Ref BedrockFallbackModelId
+        BEDROCK_REGION: !If [HasBedrockRegion, !Ref BedrockRegion, !Ref AWS::Region]
+        BEDROCK_EFFORT: !Ref BedrockEffort
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Data: DynamoDB single table (rosters, interventions, hash-chained audit ledger)
+  # ---------------------------------------------------------------------------
+  HeatGuardTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub heatguard-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  # ---------------------------------------------------------------------------
+  # Events: custom bus + archive (replayable safety record)
+  # ---------------------------------------------------------------------------
+  SafetyEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub heatguard-${Stage}
+
+  SafetyEventArchive:
+    Type: AWS::Events::Archive
+    Properties:
+      SourceArn: !GetAtt SafetyEventBus.Arn
+      Description: Every HeatGuard safety event, replayable for incident review.
+      RetentionDays: 365
+      EventPattern:
+        source: [heatguard.safety]
+
+  # ---------------------------------------------------------------------------
+  # Notifications: SNS topics
+  # ---------------------------------------------------------------------------
+  WorkerBroadcastTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub heatguard-${Stage}-worker-broadcast
+      DisplayName: HeatGuard
+      KmsMasterKeyId: alias/aws/sns
+
+  SafetyAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub heatguard-${Stage}-safety-alerts
+      DisplayName: HeatGuard Alerts
+      KmsMasterKeyId: alias/aws/sns
+
+  BroadcastEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref WorkerBroadcastTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  AlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref SafetyAlertsTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ---------------------------------------------------------------------------
+  # API: HTTP API (throttled) + route Lambdas
+  # ---------------------------------------------------------------------------
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [content-type]
+        MaxAge: 600
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/health.handler
+      Description: Reports which AWS services are live for the UI badge.
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref HeatGuardTable
+      Events:
+        Health:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /api/health
+
+  InterventionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/interventions.handler
+      Description: Requests Bedrock plans (async via EventBridge) and records supervisor decisions.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref HeatGuardTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref SafetyEventBus
+      Events:
+        RequestIntervention:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /api/sites/{siteId}/interventions
+        GetIntervention:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /api/sites/{siteId}/interventions/{interventionId}
+        Decide:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /api/sites/{siteId}/interventions/{interventionId}/decision
+
+  WorkforceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/workforce.handler
+      Description: Worker roster, 1-tap acknowledgements, hydration logs, SOS and nudges.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref HeatGuardTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref SafetyEventBus
+      Events:
+        Roster:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /api/sites/{siteId}/roster
+        WorkerEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /api/sites/{siteId}/workers/{workerId}/events
+        Nudge:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /api/sites/{siteId}/nudge
+
+  AuditFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/audit.handler
+      Description: Read-only access to the hash-chained audit ledger, with chain verification.
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref HeatGuardTable
+      Events:
+        Audit:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /api/sites/{siteId}/audit
+
+  # ---------------------------------------------------------------------------
+  # Event-driven workers
+  # ---------------------------------------------------------------------------
+  SynthesisFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/synthesis.handler
+      Description: Calls Claude on Amazon Bedrock to synthesize a constraint-checked intervention plan.
+      MemorySize: 1024
+      Timeout: 120
+      Environment:
+        Variables:
+          BEDROCK_TIMEOUT_MS: '100000'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref HeatGuardTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref SafetyEventBus
+        - Statement:
+            # Claude in Amazon Bedrock (Messages API endpoint, bedrock-mantle). Scope Resource to
+            # specific model ARNs for production.
+            - Effect: Allow
+              Action: bedrock-mantle:CreateInference
+              Resource: '*'
+      Events:
+        InterventionRequested:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref SafetyEventBus
+            RuleName: !Sub heatguard-${Stage}-synthesis
+            Pattern:
+              source: [heatguard.safety]
+              detail-type: [InterventionRequested]
+            RetryPolicy:
+              MaximumRetryAttempts: 2
+              MaximumEventAgeInSeconds: 600
+            DeadLetterConfig:
+              Type: SQS
+
+  DispatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/dispatch.handler
+      Description: Publishes directives and safety alerts to SNS and receipts them in the audit ledger.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref HeatGuardTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt WorkerBroadcastTopic.TopicName
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt SafetyAlertsTopic.TopicName
+      Events:
+        BroadcastRule:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref SafetyEventBus
+            RuleName: !Sub heatguard-${Stage}-broadcast
+            Pattern:
+              source: [heatguard.safety]
+              $or:
+                - detail-type: [InterventionDecided]
+                  detail:
+                    decision: [APPROVED, MODIFIED]
+                - detail-type: [WorkerNudgeRequested]
+            RetryPolicy:
+              MaximumRetryAttempts: 3
+            DeadLetterConfig:
+              Type: SQS
+        SafetyAlertRule:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref SafetyEventBus
+            RuleName: !Sub heatguard-${Stage}-safety-alerts
+            Pattern:
+              source: [heatguard.safety]
+              $or:
+                - detail-type: [HeatEmergencyReported]
+                - detail-type: [InterventionDecided]
+                  detail:
+                    decision: [REJECTED]
+                - detail-type: [HeatRiskEvaluated]
+                  detail:
+                    riskLevel: [HIGH_RISK, EXTREME_DANGER]
+            RetryPolicy:
+              MaximumRetryAttempts: 3
+            DeadLetterConfig:
+              Type: SQS
+
+  HeatMonitorFunction:
+    Type: AWS::Serverless::Function
+    Condition: HeatMonitorEnabled
+    Properties:
+      Handler: src/handlers/heatMonitor.handler
+      Description: Scheduled live-weather WBGT sweep; publishes HeatRiskEvaluated on risk transitions.
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref HeatGuardTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref SafetyEventBus
+      Events:
+        Sweep:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: !Ref HeatMonitorSchedule
+            Description: HeatGuard live WBGT sweep
+
+  # ---------------------------------------------------------------------------
+  # Frontend: private S3 bucket behind CloudFront (OAC); /api/* proxied to the HTTP API
+  # ---------------------------------------------------------------------------
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Condition: FrontendEnabled
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: FrontendEnabled
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-frontend-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: FrontendEnabled
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub HeatGuard ${Stage}
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        PriceClass: PriceClass_200
+        Origins:
+          - Id: web
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt FrontendOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - Id: api
+            DomainName: !Sub ${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: web
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: FrontendEnabled
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontOAC
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
+
+Outputs:
+  AppUrl:
+    Condition: FrontendEnabled
+    Description: HeatGuard web app (run `npm run aws:deploy-frontend` to upload the build).
+    Value: !Sub https://${FrontendDistribution.DomainName}
+  ApiUrl:
+    Description: HTTP API base URL (set VITE_API_BASE_URL to this to point a local frontend at the cloud).
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  FrontendBucketName:
+    Condition: FrontendEnabled
+    Value: !Ref FrontendBucket
+  FrontendDistributionId:
+    Condition: FrontendEnabled
+    Value: !Ref FrontendDistribution
+  TableName:
+    Value: !Ref HeatGuardTable
+  EventBusName:
+    Value: !Ref SafetyEventBus
+  BroadcastTopicArn:
+    Value: !Ref WorkerBroadcastTopic
+  AlertsTopicArn:
+    Value: !Ref SafetyAlertsTopic
+  BedrockModelId:
+    Value: !Ref BedrockModelId

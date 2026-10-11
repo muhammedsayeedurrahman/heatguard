@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment & AWS SAM build output
+.env
+.env.*
+!.env.example
+.aws-sam/
+samconfig.local.toml

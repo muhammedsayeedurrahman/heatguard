@@ -158,6 +158,8 @@ body {
   outline: none;
   cursor: pointer;
   transition: border-color 0.15s ease;
+  max-width: 280px;
+  text-overflow: ellipsis;
 }
 
 .site-select-input:hover, .site-select-input:focus {
@@ -220,6 +222,8 @@ body {
   padding: 4px 10px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .live-pulse-dot {
@@ -1019,4 +1023,156 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.22);
+}
+
+/* ==========================================================================
+   AWS CLOUD / LOCAL ENGINE PROVENANCE
+   ========================================================================== */
+
+.engine-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  white-space: nowrap;
+}
+
+.engine-badge.cloud {
+  color: #fbbf24;
+  background: rgba(255, 153, 0, 0.1);
+  border: 1px solid rgba(255, 153, 0, 0.35);
+}
+
+.engine-badge.local {
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-strong);
+}
+
+.engine-badge.synthesizing {
+  color: #38bdf8;
+  background: rgba(2, 132, 199, 0.1);
+  border: 1px solid rgba(2, 132, 199, 0.3);
+}
+
+.spin-icon {
+  animation: hg-spin 1s linear infinite;
+}
+
+@keyframes hg-spin {
+  to { transform: rotate(360deg); }
+}
+
+.backend-status-pill.tone-cloud { color: #fbbf24; border-color: rgba(255, 153, 0, 0.35); }
+.backend-status-pill.tone-hybrid { color: #38bdf8; border-color: rgba(2, 132, 199, 0.35); }
+.backend-status-pill.tone-local { color: var(--text-secondary); }
+
+.ai-rationale-box {
+  border: 1px solid rgba(255, 153, 0, 0.25);
+  background: rgba(255, 153, 0, 0.04);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.ai-rationale-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fbbf24;
+  margin-bottom: 6px;
+}
+
+.constraint-check-list {
+  list-style: none;
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.constraint-check-list li {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 0.74rem;
+}
+
+.engine-telemetry {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.engine-fallback-note {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  background: rgba(0, 0, 0, 0.2);
+  border-left: 2px solid var(--color-caution);
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  margin-bottom: 14px;
+  overflow-wrap: anywhere;
+}
+
+.service-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.service-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.service-chip.live { color: var(--color-safe); border-color: var(--color-safe-border); }
+
+.ledger-chip {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+.ledger-chip.persisted { color: var(--color-safe); border-color: var(--color-safe-border); }
+
+/* Navbar: keep every control reachable once the backend pill is added */
+.segmented-tab { white-space: nowrap; }
+
+@media (max-width: 1500px) {
+  .breadcrumb-item,
+  .breadcrumb-trail > svg { display: none; }
+  .breadcrumb-trail { padding-left: 12px; }
+  .stream-status-pill:not(.backend-status-pill) { display: none; }
+}
+
+@media (max-width: 1280px) {
+  .site-select-input { max-width: 190px; }
 }

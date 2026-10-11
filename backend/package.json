@@ -1,0 +1,22 @@
+{
+  "name": "heatguard-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HeatGuard serverless backend: Amazon Bedrock (Claude), DynamoDB single-table ledger, EventBridge, SNS",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "^0.34.4",
+    "@anthropic-ai/sdk": "^0.133.0",
+    "@aws-sdk/client-dynamodb": "^3.1149.0",
+    "@aws-sdk/client-eventbridge": "^3.1149.0",
+    "@aws-sdk/client-sns": "^3.1149.0",
+    "@aws-sdk/credential-providers": "^3.1149.0",
+    "@aws-sdk/lib-dynamodb": "^3.1149.0"
+  }
+}

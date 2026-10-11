@@ -1,0 +1,17 @@
+# AWS SAM CLI configuration: `sam build && sam deploy` (or `npm run aws:build && npm run aws:deploy`).
+version = 0.1
+
+[default.global.parameters]
+stack_name = "heatguard"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+# Claude in Amazon Bedrock is served in us-east-1 among other regions; change if needed.
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = true
+parameter_overrides = "Stage=\"dev\" BedrockModelId=\"anthropic.claude-sonnet-5-5\" BedrockFallbackModelId=\"anthropic.claude-sonnet-5\""

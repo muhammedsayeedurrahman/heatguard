@@ -1,7 +1,7 @@
 import React from 'react';
 import { ShieldCheck, Printer, X, Download, Award, CheckCircle } from 'lucide-react';
 
-export default function ComplianceReportModal({ isOpen, onClose, site, weatherData, intervention, workers, auditLogs }) {
+export default function ComplianceReportModal({ isOpen, onClose, site, weatherData, intervention, workers, auditLogs, ledger }) {
   if (!isOpen) return null;
 
   const totalWorkers = workers.length;
@@ -180,7 +180,14 @@ export default function ComplianceReportModal({ isOpen, onClose, site, weatherDa
           <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ fontSize: '0.72rem', fontFamily: 'monospace', color: '#64748b' }}>
-                EventBridge Block Hash: 0x8F3A...E921B
+                {ledger?.head
+                  ? `${ledger.kind === 'dynamodb' ? 'DynamoDB' : 'In-memory'} ledger head #${ledger.head.seq}: 0x${ledger.head.headHash.slice(0, 10)}…${ledger.head.headHash.slice(-6)}${
+                      ledger.verification ? (ledger.verification.valid ? ' · SHA-256 chain verified' : ' · CHAIN VERIFICATION FAILED') : ''
+                    }`
+                  : 'Ledger: browser session only (not anchored to the AWS audit ledger)'}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                Plan engine: {intervention.engine?.provider === 'amazon-bedrock' ? `Amazon Bedrock · ${intervention.engine.modelName}` : 'Calibrated Local Engine'}
               </div>
               <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
                 Standard: NIOSH Pub No. 2016-106 • OSHA General Duty Clause 5(a)(1)

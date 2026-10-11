@@ -8,7 +8,8 @@ import {
   Columns3, 
   FileCheck2,
   ChevronRight,
-  Radio
+  Cloud,
+  CloudOff,
 } from 'lucide-react';
 import { SITE_PRESETS } from '../services/weatherService';
 
@@ -21,6 +22,7 @@ export default function Navbar({
   onTogglePlayground,
   onOpenReportModal,
   liveWeatherStatus,
+  backend,
 }) {
   return (
     <header className="console-nav" id="heatguard-navbar">
@@ -89,6 +91,18 @@ export default function Navbar({
       </div>
 
       <div className="nav-right">
+        {/* AWS backend status: AWS Cloud Live / Hybrid / Calibrated Local Engine */}
+        {backend && (
+          <div
+            id="backend-status-pill"
+            className={`stream-status-pill backend-status-pill tone-${backend.tone}`}
+            title={backend.detail}
+          >
+            {backend.tone === 'local' ? <CloudOff size={12} /> : <Cloud size={12} />}
+            <span>{backend.label}</span>
+          </div>
+        )}
+
         {/* Weather Stream Status */}
         <div className="stream-status-pill">
           <span 

@@ -8,8 +8,11 @@ import {
   TrendingDown, 
   Droplets,
   BookOpen,
-  ArrowRight
+  RefreshCw,
+  CircleCheck,
+  CircleX,
 } from 'lucide-react';
+import EngineBadge from './EngineBadge';
 
 export default function InterventionCard({
   intervention,
@@ -20,8 +23,14 @@ export default function InterventionCard({
   onOpenModifyModal,
   onOpenRejectModal,
   supervisorNote,
+  aiStatus,
+  aiError,
+  cloudConnected,
+  onRegenerate,
 }) {
-  const { primaryRecommendation, dangerWindow, personHoursAverted, waterRequirementLiters, options, id } = intervention;
+  const { primaryRecommendation, dangerWindow, waterRequirementLiters, options, id, engine, aiRationale, constraintChecks } = intervention;
+  const isBedrockPlan = engine?.provider === 'amazon-bedrock';
+  const fallbackReason = engine?.fallbackReason || (aiStatus === 'error' ? aiError : null);
 
   return (
     <div className="panel-frame" id="protocol-intervention-panel">
@@ -57,6 +66,33 @@ export default function InterventionCard({
       </div>
 
       <div className="intervention-console">
+        {/* Plan provenance: which engine produced what is on screen */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <EngineBadge engine={engine} synthesizing={aiStatus === 'synthesizing'} />
+            {aiStatus === 'synthesizing' && <EngineBadge engine={engine} />}
+          </div>
+          {cloudConnected && (
+            <button
+              id="btn-regenerate-plan"
+              className="btn-outline-neutral"
+              style={{ padding: '3px 9px', fontSize: '0.7rem' }}
+              onClick={onRegenerate}
+              disabled={aiStatus === 'synthesizing'}
+              title="Request a fresh plan from Claude on Amazon Bedrock for the current conditions"
+            >
+              <RefreshCw size={11} className={aiStatus === 'synthesizing' ? 'spin-icon' : undefined} />
+              Re-synthesize
+            </button>
+          )}
+        </div>
+
+        {fallbackReason && !isBedrockPlan && aiStatus !== 'synthesizing' && (
+          <div className="engine-fallback-note">
+            Showing the calibrated NIOSH plan. Bedrock: {fallbackReason}
+          </div>
+        )}
+
         <h2 className="directive-headline">{primaryRecommendation.title}</h2>
         
         <div className="directive-summary-box">
@@ -117,6 +153,38 @@ export default function InterventionCard({
             ))}
           </div>
         </div>
+
+        {isBedrockPlan && aiRationale && (
+          <div className="ai-rationale-box" id="ai-rationale-panel">
+            <div className="ai-rationale-title">
+              <span>Claude Reasoning · Constraint Audit</span>
+              <span style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', textTransform: 'none', fontWeight: 500 }}>
+                {(engine.latencyMs / 1000).toFixed(1)}s · {engine.usage?.outputTokens ?? 0} tokens
+              </span>
+            </div>
+            <div>{aiRationale}</div>
+            {constraintChecks?.length > 0 && (
+              <ul className="constraint-check-list">
+                {constraintChecks.map((check, idx) => (
+                  <li key={idx}>
+                    {check.satisfied ? (
+                      <CircleCheck size={13} color="var(--color-safe)" style={{ flexShrink: 0, marginTop: 1 }} />
+                    ) : (
+                      <CircleX size={13} color="var(--color-danger)" style={{ flexShrink: 0, marginTop: 1 }} />
+                    )}
+                    <span>
+                      <strong style={{ color: 'var(--text-primary)' }}>{check.constraint}</strong> — {check.note}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="engine-telemetry">
+              {engine.modelId} · {engine.region}
+              {engine.fallbackFrom ? ` · fallback from ${engine.fallbackFrom}` : ''} · guardrails: {engine.guardrails?.join(' / ')}
+            </div>
+          </div>
+        )}
 
         {/* Regulatory Citation */}
         <div className="regulatory-citation-strip">

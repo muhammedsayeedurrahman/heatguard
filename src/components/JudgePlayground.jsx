@@ -6,8 +6,53 @@ import {
   Play, 
   WifiOff, 
   SlidersHorizontal,
-  Activity
+  Server,
 } from 'lucide-react';
+
+const SERVICE_LABELS = [
+  ['bedrock', 'Bedrock'],
+  ['dynamodb', 'DynamoDB'],
+  ['eventbridge', 'EventBridge'],
+  ['sns', 'SNS'],
+];
+
+function CloudServicesRow({ health, onRecheck }) {
+  return (
+    <div className="service-chip-row" id="cloud-services-row" style={{ width: '100%' }}>
+      <Server size={12} color="var(--text-tertiary)" />
+      <span style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase' }}>
+        AWS Services:
+      </span>
+      {health ? (
+        SERVICE_LABELS.map(([key, label]) => {
+          const service = health.services[key];
+          const live = service.mode === 'live';
+          return (
+            <span key={key} className={`service-chip ${live ? 'live' : ''}`} title={JSON.stringify(service)}>
+              ● {label}: {live ? (key === 'bedrock' ? service.modelName : 'live') : service.mode}
+            </span>
+          );
+        })
+      ) : (
+        <span className="service-chip">API unreachable · browser-only Calibrated Local Engine</span>
+      )}
+      {health?.services.bedrock.lastCall && (
+        <span className="service-chip" title={health.services.bedrock.lastCall.error || ''}>
+          last Bedrock call: {health.services.bedrock.lastCall.ok ? `ok (${(health.services.bedrock.lastCall.latencyMs / 1000).toFixed(1)}s)` : 'failed'}
+        </span>
+      )}
+      <button
+        id="btn-recheck-cloud"
+        className="btn-outline-neutral"
+        style={{ padding: '2px 8px', fontSize: '0.66rem' }}
+        onClick={onRecheck}
+      >
+        <RefreshCw size={10} />
+        Recheck
+      </button>
+    </div>
+  );
+}
 
 export default function JudgePlayground({
   customParams,
@@ -18,6 +63,8 @@ export default function JudgePlayground({
   onResetLive,
   isOfflineMode,
   onToggleOffline,
+  cloudHealth,
+  onRecheckCloud,
 }) {
   return (
     <div className="simulation-drawer" id="judge-simulation-drawer">
@@ -161,6 +208,8 @@ export default function JudgePlayground({
           Live Weather Sync
         </button>
       </div>
+
+      <CloudServicesRow health={cloudHealth} onRecheck={onRecheckCloud} />
     </div>
   );
 }

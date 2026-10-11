@@ -3,11 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "backend"
+  ],
   "scripts": {
     "dev": "vite",
+    "api": "node --env-file-if-exists=.env.local server/localApi.js",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test \"backend/test/*.test.js\"",
+    "aws:build": "sam build",
+    "aws:deploy": "sam deploy --guided",
+    "aws:env": "node scripts/pull-stack-env.mjs",
+    "aws:deploy-frontend": "node scripts/deploy-frontend.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.55.0",

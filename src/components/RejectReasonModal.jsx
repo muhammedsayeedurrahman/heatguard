@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { AlertOctagon, X, ShieldAlert } from 'lucide-react';
 
 export default function RejectReasonModal({ isOpen, onClose, onConfirmReject, activeSite }) {
-  if (!isOpen) return null;
-
+  // Hooks must run on every render, so the early return comes after them.
   const [selectedReason, setSelectedReason] = useState('ACTIVE_COOLING_DEPLOYED');
   const [customExplanation, setCustomExplanation] = useState('');
+
+  if (!isOpen) return null;
 
   const REASONS = [
     {
