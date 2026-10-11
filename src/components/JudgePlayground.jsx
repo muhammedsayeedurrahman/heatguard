@@ -157,7 +157,7 @@ export default function JudgePlayground({
           className="btn-outline-danger"
           style={{ padding: '5px 10px', fontSize: '0.72rem' }}
           onClick={onTriggerHeatSpike}
-          title="Inject severe 42.5°C heat spike with 1020 W/m² solar flux"
+          title="Inject a severe 38°C heat spike: 45% RH, 950 W/m² solar flux, 1.2 m/s wind"
         >
           <Flame size={12} />
           Inject Heat Spike

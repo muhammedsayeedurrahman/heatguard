@@ -21,6 +21,10 @@ import { useAiIntervention } from './hooks/useAiIntervention';
 const newEventId = () =>
   `EVT-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
 
+// A severe but survivable afternoon (WBGT 33.6°C for the Chennai site). Hotter, more humid presets
+// push the wet-bulb past ~35°C, which no real worksite reaches.
+const HEAT_SPIKE = { temp: 38, humidity: 45, solar: 950, wind: 1.2 };
+
 const localClockTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 // Cloud writes are best-effort: the local UI has already updated optimistically.
@@ -309,7 +313,8 @@ export default function App() {
 
   // Progressive simulated responses
   const simulateProgressiveWorkerAcks = () => {
-    const unackedWorkers = currentWorkers.filter((w) => w.status === 'NOTIFIED');
+    // Leave the worker open in the Field Terminal for a real 1-tap acknowledgement.
+    const unackedWorkers = currentWorkers.filter((w) => w.status === 'NOTIFIED' && w.id !== activeWorkerId);
     if (unackedWorkers.length === 0) return;
 
     unackedWorkers.slice(0, 4).forEach((worker, index) => {
@@ -352,18 +357,13 @@ export default function App() {
 
   const handleTriggerHeatSpike = () => {
     setIsCustomMode(true);
-    setCustomParams({
-      temp: 42.5,
-      humidity: 70,
-      solar: 1020,
-      wind: 1.2,
-    });
+    setCustomParams(HEAT_SPIKE);
     setInterventionStatus('PENDING_APPROVAL');
-    const spike = buildConditionsSnapshot(activeSite, { temp: 42.5, humidity: 70, solar: 1020, wind: 1.2 });
+    const spike = buildConditionsSnapshot(activeSite, HEAT_SPIKE);
     appendAuditLog(
       'PHYSICS_SPIKE_INJECTED',
       'Judge Playground Testbed',
-      `Injected extreme heat wave parameters (Temp: 42.5°C, Solar: 1020 W/m²). WBGT spiked to ${spike.wbgt}°C (${spike.risk.badgeText}).`,
+      `Injected extreme heat wave parameters (Temp: ${HEAT_SPIKE.temp}°C, RH: ${HEAT_SPIKE.humidity}%, Solar: ${HEAT_SPIKE.solar} W/m²). WBGT spiked to ${spike.wbgt}°C (${spike.risk.badgeText}).`,
       'danger'
     );
   };

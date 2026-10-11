@@ -70,7 +70,7 @@ When WBGT exceeds the NIOSH Recommended Alert Limit, the engine doesn't just say
 ### 5. Interactive Judge Evaluation Playground
 Included directly on screen for hackathon evaluators:
 - Live sliders for **Temperature (25–48°C)**, **Humidity (15–95%)**, **Solar Irradiance (200–1100 W/m²)**, and **Wind Speed (0.5–6 m/s)**.
-- **🔥 Heat Spike Trigger:** Instantly simulates a critical 42.5°C heat wave to test real-time system reaction.
+- **🔥 Heat Spike Trigger:** Instantly simulates a severe 38°C, 950 W/m² heat wave (WBGT 33.6°C at the Chennai site) to test real-time system reaction.
 - **⚡ Stream Worker Acks:** Simulates progressive worker check-ins appearing live on the supervisor screen.
 - **📶 Simulate Offline Mode:** Tests offline caching and background synchronization.
 - **Split Demo Mode:** Side-by-side supervisor dashboard and worker mobile device.
